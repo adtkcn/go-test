@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/cheggaaa/pb/v3"
 )
 
 // 每个请求配置的结果结构体
@@ -20,7 +22,7 @@ type Result struct {
 	MaxTime         time.Duration
 	AvgTime         time.Duration
 	RequestsTimes   []time.Duration
-	TimeOut         int64
+	RequestTimeOut  int64
 	ErrorCodes      map[int]int
 }
 
@@ -70,10 +72,6 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	progressStep := int64(totalRequests / 10)
-	if progressStep < 1 {
-		progressStep = 1
-	}
 	result := Result{
 		URL:        request.URL,
 		Method:     request.Method,
@@ -92,6 +90,7 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 	}
 	close(requestChan)
 
+	bar := pb.StartNew(int(totalRequests))
 	totalStartTime := time.Now()
 	// 创建工作协程
 	for i := int64(0); i < concurrency; i++ {
@@ -110,19 +109,15 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 				// 发送请求
 				resp, err := handler.client.Do(req)
 
-				mu.Lock()
-				result.TotalRequests += 1
-				mu.Unlock()
-
 				// 处理错误情况
 				if err != nil {
 					// 判断超时
 					if err, ok := err.(net.Error); ok && err.Timeout() {
 						mu.Lock()
-						result.TimeOut++
+						result.RequestTimeOut++
 						mu.Unlock()
 					} else {
-						fmt.Printf("请求错误: %v, URL: %s\n", err, req.URL)
+						fmt.Printf("请求错误: %v\n", err)
 					}
 
 				} else {
@@ -130,13 +125,12 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					// io.Copy(io.Discard, resp.Body)
 					// 读取并打印内容
 					_, err := io.ReadAll(resp.Body)
+					resp.Body.Close()
 					if err != nil {
 						fmt.Printf("读取响应体错误: %v, URL: %s\n", err, req.URL)
 					}
 					// body = []byte{}
 					// fmt.Printf("响应体长度: %d\n，前50个字符: %s\n", len(body), string(body[:50]))
-
-					resp.Body.Close()
 
 					if resp.StatusCode == http.StatusOK {
 						elapsed := time.Since(reqStartTime) // 请求耗时
@@ -146,22 +140,22 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 						mu.Unlock()
 						// atomic.AddInt64(&result.SuccessRequests, 1)
 					} else if resp.StatusCode != http.StatusOK {
-						errCode := resp.StatusCode
 						mu.Lock()
-						result.ErrorCodes[errCode]++
+						result.ErrorCodes[resp.StatusCode]++
 						mu.Unlock()
 						fmt.Printf("请求状态码错误: %d, URL: %s\n", resp.StatusCode, req.URL)
 					}
 				}
-				// 检查是否达到进度报告点
-				if result.TotalRequests%progressStep == 0 || result.TotalRequests == (totalRequests) {
-					fmt.Printf("%s, 成功 %d,超时 %d, 进度: %d/%d\n", req.URL, result.SuccessRequests, result.TimeOut, result.TotalRequests, totalRequests)
-				}
+				mu.Lock()
+				result.TotalRequests += 1
+				bar.Increment()
+				mu.Unlock()
 			}
 		}()
 	}
 
 	wg.Wait()
+	bar.Finish()
 	result.TotalTime = time.Since(totalStartTime)
 	result.AvgTime = average(result.RequestsTimes)
 	result.MaxTime = maxDuration(result.RequestsTimes)
@@ -177,7 +171,7 @@ func showResult(results []Result) {
 
 		fmt.Printf("【%s】URL: %s\n", reqResult.Method, reqResult.URL)
 
-		fmt.Printf("总请求: %d, 成功数: %d, 超时数 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TimeOut, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
+		fmt.Printf("总请求: %d, 成功数: %d, 超时数 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.RequestTimeOut, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
 
 		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", reqResult.TotalTime, reqResult.MaxTime, reqResult.AvgTime)
 
