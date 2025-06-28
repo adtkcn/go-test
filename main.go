@@ -99,10 +99,6 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 		go func() {
 			defer wg.Done()
 			for range requestChan {
-				reqStartTime := time.Now()
-				// 创建请求
-				// var req *http.Request
-				// var err error
 
 				// 使用请求处理器构建请求
 				req, err := handler.BuildRequest(request)
@@ -110,10 +106,10 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					fmt.Printf("%v\n", err)
 					continue
 				}
-
+				reqStartTime := time.Now()
 				// 发送请求
 				resp, err := handler.client.Do(req)
-				elapsed := time.Since(reqStartTime) // 请求耗时
+
 				mu.Lock()
 				result.TotalRequests += 1
 				mu.Unlock()
@@ -130,7 +126,7 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					}
 
 				} else {
-					// 确保响应体被读取和关闭，io.Discard 丢弃响应体内容
+					// 确保响应体被读取和关闭,io.Discard 丢弃响应体内容
 					// io.Copy(io.Discard, resp.Body)
 					// 读取并打印内容
 					_, err := io.ReadAll(resp.Body)
@@ -143,6 +139,7 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					resp.Body.Close()
 
 					if resp.StatusCode == http.StatusOK {
+						elapsed := time.Since(reqStartTime) // 请求耗时
 						mu.Lock()
 						result.RequestsTimes = append(result.RequestsTimes, elapsed)
 						result.SuccessRequests += 1
@@ -178,19 +175,16 @@ func showResult(results []Result) {
 	for index, reqResult := range results {
 		fmt.Printf("====== 请求配置 #%d 结果 ======\n", index+1)
 
-		// fmt.Printf("平均DNS时间: %v\n", average(reqResult.DNSTimes))
-		// fmt.Printf("最大DNS时间: %v\n", maxDuration(reqResult.DNSTimes))
-
 		fmt.Printf("【%s】URL: %s\n", reqResult.Method, reqResult.URL)
 
-		fmt.Printf("总请求数: %d，成功数: %d, 超时 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TimeOut, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
-		// fmt.Printf("成功率: %.2f%%\n", float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
-		fmt.Printf("总耗时: %v，最大耗时: %v, 平均耗时: %v (超时不计入)\n", reqResult.TotalTime, reqResult.MaxTime, reqResult.AvgTime)
+		fmt.Printf("总请求: %d, 成功数: %d, 超时数 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TimeOut, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
+
+		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", reqResult.TotalTime, reqResult.MaxTime, reqResult.AvgTime)
 
 		if len(reqResult.ErrorCodes) > 0 {
 			fmt.Printf("错误码: %+v\n", reqResult.ErrorCodes)
 		}
-		fmt.Printf("Req/s: %+v\n\n", float64(reqResult.TotalRequests)/reqResult.TotalTime.Seconds())
+		fmt.Printf("Req/S: %.2f\n\n", float64(reqResult.TotalRequests)/reqResult.TotalTime.Seconds())
 		// 耗时分布统计
 		maxMs := int(reqResult.MaxTime.Milliseconds())
 		interval := 100
