@@ -24,6 +24,7 @@ type Result struct {
 	RequestsTimes   []time.Duration
 	RequestTimeOut  int64
 	ErrorCodes      map[int]int
+	ErrorMessages   map[string]int
 }
 
 func main() {
@@ -73,9 +74,10 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 	var mu sync.Mutex
 
 	result := Result{
-		URL:        request.URL,
-		Method:     request.Method,
-		ErrorCodes: make(map[int]int),
+		URL:           request.URL,
+		Method:        request.Method,
+		ErrorCodes:    make(map[int]int),
+		ErrorMessages: make(map[string]int),
 	}
 
 	// 初始化请求处理器
@@ -102,7 +104,10 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 				// 使用请求处理器构建请求
 				req, err := handler.BuildRequest(request)
 				if err != nil {
-					fmt.Printf("%v\n", err)
+					// fmt.Printf("%v\n", err)
+					mu.Lock()
+					result.ErrorMessages[err.Error()]++
+					mu.Unlock()
 					continue
 				}
 				reqStartTime := time.Now()
@@ -117,7 +122,9 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 						result.RequestTimeOut++
 						mu.Unlock()
 					} else {
-						fmt.Printf("请求错误: %v\n", err)
+						mu.Lock()
+						result.ErrorMessages[err.Error()]++
+						mu.Unlock()
 					}
 
 				} else {
@@ -127,7 +134,9 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					_, err := io.ReadAll(resp.Body)
 					resp.Body.Close()
 					if err != nil {
-						fmt.Printf("读取响应体错误: %v, URL: %s\n", err, req.URL)
+						mu.Lock()
+						result.ErrorMessages[fmt.Sprintf("读取响应体错误: %v", err)]++
+						mu.Unlock()
 					}
 					// body = []byte{}
 					// fmt.Printf("响应体长度: %d\n，前50个字符: %s\n", len(body), string(body[:50]))
@@ -142,8 +151,8 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 					} else if resp.StatusCode != http.StatusOK {
 						mu.Lock()
 						result.ErrorCodes[resp.StatusCode]++
+						result.ErrorMessages[fmt.Sprintf("请求状态码错误: %d", resp.StatusCode)]++
 						mu.Unlock()
-						fmt.Printf("请求状态码错误: %d, URL: %s\n", resp.StatusCode, req.URL)
 					}
 				}
 				mu.Lock()
@@ -167,18 +176,23 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 func showResult(results []Result) {
 	// 显示每个请求配置的单独结果
 	for index, reqResult := range results {
-		fmt.Printf("====== 请求配置 #%d 结果 ======\n", index+1)
-
-		fmt.Printf("【%s】URL: %s\n", reqResult.Method, reqResult.URL)
+		fmt.Printf("====== 请求配置 #%d ======\n", index+1)
+		fmt.Printf("【URL】[%s]: %s\n", reqResult.Method, reqResult.URL)
+		fmt.Printf("【QPS】: %.2f\n\n", float64(reqResult.TotalRequests)/reqResult.TotalTime.Seconds())
 
 		fmt.Printf("总请求: %d, 成功数: %d, 超时数 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.RequestTimeOut, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
-
 		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", reqResult.TotalTime, reqResult.MaxTime, reqResult.AvgTime)
 
 		if len(reqResult.ErrorCodes) > 0 {
 			fmt.Printf("错误码: %+v\n", reqResult.ErrorCodes)
 		}
-		fmt.Printf("Req/S: %.2f\n\n", float64(reqResult.TotalRequests)/reqResult.TotalTime.Seconds())
+		if len(reqResult.ErrorMessages) > 0 {
+			fmt.Println("错误信息统计:")
+			for msg, count := range reqResult.ErrorMessages {
+				fmt.Printf("[%d次] %s\n", count, msg)
+			}
+		}
+		fmt.Printf("\n")
 		// 耗时分布统计
 		maxMs := int(reqResult.MaxTime.Milliseconds())
 		interval := 100
