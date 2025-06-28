@@ -1,0 +1,9 @@
+[
+  {
+    "url": "https://www.baidu.com/s",
+    "method": "GET",
+    "params": {
+      "wd": "换行符"
+    }
+  }
+]
