@@ -41,26 +41,30 @@ func NewRequestHandler(timeout time.Duration) *RequestHandler {
 }
 
 // BuildRequest
-func (h *RequestHandler) BuildRequest(config RequestConfig) (*http.Request, error) {
+func (h *RequestHandler) NewRequest(config RequestConfig) (*http.Response, *http.Client, error) {
 	parsedURL, err := url.Parse(config.URL)
 	if err != nil {
-		return nil, fmt.Errorf("URL解析错误: %v", err)
+		return nil, nil, fmt.Errorf("URL解析错误: %v", err)
 	}
 
 	h.processURLParams(parsedURL, config.Params)
 	reqBody, err := h.createRequestBody(config.Data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	method := h.getMethod(config.Method)
 	req, err := http.NewRequest(method, parsedURL.String(), reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
+		return nil, nil, fmt.Errorf("创建请求失败: %v", err)
 	}
 
 	h.setRequestHeaders(req, config.Headers)
-	return req, nil
+
+	// 发送请求
+	resp, err := h.client.Do(req)
+
+	return resp, h.client, err
 }
 
 func (h *RequestHandler) processURLParams(u *url.URL, params map[string]interface{}) {
@@ -105,6 +109,12 @@ func (h *RequestHandler) setRequestHeaders(req *http.Request, headers map[string
 
 // 读取JSON配置文件
 func ReadConfig(filePath string) ([]RequestConfig, error) {
+	//取文件名称,是否存在
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("文件不存在: %v", err)
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -116,4 +126,12 @@ func ReadConfig(filePath string) ([]RequestConfig, error) {
 	}
 
 	return requestList, nil
+}
+
+func writeFile(filePath string, data []byte) error {
+	err := os.WriteFile(filePath, data, 0644)
+	if err != nil {
+		return err
+	}
+	return nil
 }
