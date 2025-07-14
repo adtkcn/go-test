@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
+	"github.com/tidwall/gjson"
 )
 
 // 每个请求配置的结果结构体
@@ -68,11 +69,14 @@ func runTest(requestList []RequestConfig, concurrency, totalRequests, timeout in
 
 	// 顺序处理每个请求配置
 	for index, request := range requestList {
-		fmt.Printf("开始测试请求配置 #%d: %s %s\n", index+1, request.Method, request.URL)
+		fmt.Printf("开始测试请求配置 #%d: [%s] %s\n", index+1, request.Method, request.URL)
+		if request.Verify.Status == 0 {
+			request.Verify.Status = http.StatusOK
+		}
 		reqResult := runSingleConfigTest(request, concurrency, totalRequests, timeout)
 
 		results = append(results, reqResult)
-		fmt.Printf("测试完成 #%d: 总请求数=%d, 成功数=%d, 总耗时=%vms\n\n", index+1, reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TotalTime)
+		// fmt.Printf("测试完成 #%d: 总请求数=%d, 成功数=%d, 总耗时=%vms\n\n", index+1, reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TotalTime)
 	}
 	return results
 }
@@ -111,23 +115,18 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 				reqStartTime := time.Now()
 				// 使用请求处理器构建请求
 				resp, _, err := handler.NewRequest(request)
-				if err != nil {
-					// fmt.Printf("%v\n", err)
-					mu.Lock()
-					result.ErrorMessages[err.Error()]++
-					mu.Unlock()
-					continue
-				}
+				mu.Lock()
+				result.TotalRequests += 1
+				bar.Increment()
+				mu.Unlock()
 
-				// 发送请求
-				// resp, err := handler.client.Do(req)
-
-				// 处理错误情况
 				if err != nil {
 					// 判断超时
 					if err, ok := err.(net.Error); ok && err.Timeout() {
+						elapsed := time.Since(reqStartTime).Milliseconds() // 请求耗时,单位:毫秒
 						mu.Lock()
 						result.RequestTimeoutNum++
+						result.RequestsTimes = append(result.RequestsTimes, elapsed)
 						mu.Unlock()
 					} else {
 						mu.Lock()
@@ -138,38 +137,60 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 				} else {
 					// 确保响应体被读取和关闭,io.Discard 丢弃响应体内容
 					// io.Copy(io.Discard, resp.Body)
+
 					// 读取并打印内容
 					body, err := io.ReadAll(resp.Body)
 					resp.Body.Close()
+					elapsed := time.Since(reqStartTime).Milliseconds() // 请求耗时,单位:毫秒
+					mu.Lock()
+					result.RequestsTimes = append(result.RequestsTimes, elapsed)
+					mu.Unlock()
+
 					if err != nil {
 						mu.Lock()
 						result.ErrorMessages[fmt.Sprintf("读取响应体错误: %v", err)]++
 						mu.Unlock()
+						break
 					}
-					// body = []byte{}
+
 					if debug {
-						fmt.Printf("响应体长度: %d\n响应体内容: %s\n", len(body), string(body[:350]))
+						fmt.Printf("\n响应体内容: %s\n", string(body))
 					}
-
-					if resp.StatusCode == http.StatusOK {
-						elapsed := time.Since(reqStartTime).Milliseconds() // 请求耗时,单位:毫秒
-
+					var statusFlag = false
+					if request.Verify.Status == resp.StatusCode {
+						statusFlag = true
+					} else {
+						statusFlag = false
+					}
+					var fieldFlag = true
+					if request.Verify.Field != nil {
+						var jsonStr = string(body)
+						for key, value := range request.Verify.Field {
+							jsonValue := gjson.Get(jsonStr, key).Value()
+							if jsonValue != value {
+								mu.Lock()
+								fieldFlag = false
+								result.ErrorMessages[fmt.Sprintf("字段 %v 验证错误, 期望: %v, 实际: %v", key, value, jsonValue)]++
+								mu.Unlock()
+							}
+						}
+					}
+					// fmt.Printf("statusFlag:%v,fieldFlag:%v\n", statusFlag, fieldFlag)
+					if statusFlag && fieldFlag {
+						// elapsed := time.Since(reqStartTime).Milliseconds() // 请求耗时,单位:毫秒
 						mu.Lock()
-						result.RequestsTimes = append(result.RequestsTimes, elapsed)
 						result.SuccessRequests += 1
 						mu.Unlock()
-						// atomic.AddInt64(&result.SuccessRequests, 1)
-					} else if resp.StatusCode != http.StatusOK {
-						mu.Lock()
-						result.ErrorCodes[resp.StatusCode]++
-						result.ErrorMessages[fmt.Sprintf("请求状态码错误: %d", resp.StatusCode)]++
-						mu.Unlock()
+					} else {
+						if !statusFlag {
+							mu.Lock()
+							result.ErrorCodes[resp.StatusCode]++
+							mu.Unlock()
+						}
 					}
+
 				}
-				mu.Lock()
-				result.TotalRequests += 1
-				bar.Increment()
-				mu.Unlock()
+
 			}
 		}()
 	}
@@ -194,14 +215,18 @@ func showResult(results []Result) {
 			fmt.Printf("请求结果: %#v \n", reqResult)
 		}
 		fmt.Printf("====== 请求配置 #%d ======\n", index+1)
-		fmt.Printf("【URL】[%s]: %s\n", reqResult.RequestConfig.Method, reqResult.RequestConfig.URL)
-		fmt.Printf("【QPS】: %.2f\n\n", float64(reqResult.TotalRequests)/float64(reqResult.TotalTime)*1000)
+		fmt.Printf("【URL】:[%s] %s\n", reqResult.RequestConfig.Method, reqResult.RequestConfig.URL)
+		fmt.Printf("【QPS】:%.2f\n\n", float64(reqResult.TotalRequests)/float64(reqResult.TotalTime)*1000)
 
-		fmt.Printf("总请求: %d, 成功数: %d, 超时数 %d, 失败数: %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.RequestTimeoutNum, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
-		fmt.Printf("总耗时: %vms, 最大耗时: %vms, 平均耗时: %vms (超时不计入)\n", reqResult.TotalTime, reqResult.MaxTime, reqResult.AvgTime)
+		fmt.Printf("总请求: %d, 成功数: %d, 失败数: %d, 其中超时 %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.RequestTimeoutNum, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
+		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", MsToSeconds(reqResult.TotalTime), MsToSeconds(reqResult.MaxTime), MsToSeconds(reqResult.AvgTime))
 
 		if len(reqResult.ErrorCodes) > 0 {
-			fmt.Printf("错误码: %+v\n", reqResult.ErrorCodes)
+			fmt.Println("错误状态码:")
+			// fmt.Printf("错误码: %+v\n", reqResult.ErrorCodes)
+			for code, count := range reqResult.ErrorCodes {
+				fmt.Printf("[%d次] %d\n", count, code)
+			}
 		}
 		if len(reqResult.ErrorMessages) > 0 {
 			fmt.Println("错误信息统计:")
@@ -234,9 +259,9 @@ func showResult(results []Result) {
 				continue
 			}
 			if i == maxInterval-1 {
-				fmt.Printf("%dms+: %d次\n", start, distribution[i])
+				fmt.Printf("%s+: %d次\n", MsToSeconds(start), distribution[i])
 			} else {
-				fmt.Printf("%d-%dms: %d次\n", start, end, distribution[i])
+				fmt.Printf("%s-%s: %d次\n", MsToSeconds(start), MsToSeconds(end), distribution[i])
 			}
 		}
 

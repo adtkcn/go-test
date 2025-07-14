@@ -4,6 +4,13 @@
     "method": "GET",
     "params": {
       "wd": "换行符"
+    },
+    "verify": {
+      "status": 200,
+      "field": {
+        "code": 200,
+        "message": "success"
+      }
     }
   }
 ]

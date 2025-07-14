@@ -8,16 +8,23 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
+
+type Verify struct {
+	Status int                    `json:"status"`
+	Field  map[string]interface{} `json:"field"`
+}
 
 // 请求配置结构体，用于从JSON文件读取请求信息
 type RequestConfig struct {
 	URL     string                 `json:"url"`
 	Method  string                 `json:"method,omitempty"`
 	Params  map[string]interface{} `json:"params,omitempty"`
-	Data    map[string]interface{} `json:"data,omitempty"`
+	Data    any                    `json:"data,omitempty"`
 	Headers map[string]string      `json:"headers,omitempty"`
+	Verify  Verify                 `json:"verify"`
 }
 
 // RequestHandler 请求处理器结构体
@@ -77,9 +84,13 @@ func (h *RequestHandler) processURLParams(u *url.URL, params map[string]interfac
 	}
 }
 
-func (h *RequestHandler) createRequestBody(data map[string]interface{}) (io.Reader, error) {
+func (h *RequestHandler) createRequestBody(data any) (io.Reader, error) {
 	if data == nil {
 		return nil, nil
+	}
+	// 判断data为字符串
+	if str, ok := data.(string); ok {
+		return strings.NewReader(str), nil
 	}
 
 	dataBytes, err := json.Marshal(data)
@@ -134,4 +145,12 @@ func writeFile(filePath string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// 毫秒大于1000时转秒，带单位ms或者s
+func MsToSeconds(ms int64) string {
+	if ms > 1000 {
+		return fmt.Sprintf("%.3f", float64(ms)/1000) + "s"
+	}
+	return fmt.Sprintf("%d", ms) + "ms"
 }
