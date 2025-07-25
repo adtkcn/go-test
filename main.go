@@ -218,7 +218,7 @@ func showResult(results []Result) {
 		fmt.Printf("【URL】:[%s] %s\n", reqResult.RequestConfig.Method, reqResult.RequestConfig.URL)
 		fmt.Printf("【QPS】:%.2f\n\n", float64(reqResult.TotalRequests)/float64(reqResult.TotalTime)*1000)
 
-		fmt.Printf("总请求: %d, 成功数: %d, 失败数: %d, 其中超时 %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.RequestTimeoutNum, reqResult.TotalRequests-reqResult.SuccessRequests, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
+		fmt.Printf("总请求: %d, 成功数: %d, 失败数: %d, 其中超时 %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TotalRequests-reqResult.SuccessRequests, reqResult.RequestTimeoutNum, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
 		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", MsToSeconds(reqResult.TotalTime), MsToSeconds(reqResult.MaxTime), MsToSeconds(reqResult.AvgTime))
 
 		if len(reqResult.ErrorCodes) > 0 {
