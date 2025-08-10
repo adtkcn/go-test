@@ -39,9 +39,9 @@ go run . -c 100 -n 1000 -f config.json -t 20
       "name": "张三",
       "age": 18
     },
-    "verify": {
+    "response": {
       "status": 200,
-      "field": {
+      "data": {
         "code": 201,
         "message": "success"
       }
@@ -49,6 +49,6 @@ go run . -c 100 -n 1000 -f config.json -t 20
   }
 ]
 ```
-### 配置文件 verify 说明
+### 配置文件 response 说明
 - status: 200 表示期望的状态码,如果不配置,默认是 200
-- field: 表示期望的字段,如果不配置,默认跳过，指定字段时key格式`key1.key2.key3`
+- data: 表示期望的字段,如果不配置,默认跳过，指定字段时key格式可以为`key1.key2.key3`

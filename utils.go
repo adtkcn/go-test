@@ -12,19 +12,19 @@ import (
 	"time"
 )
 
-type Verify struct {
+type Response struct {
 	Status int                    `json:"status"`
-	Field  map[string]interface{} `json:"field"`
+	Data   map[string]interface{} `json:"field"`
 }
 
 // 请求配置结构体，用于从JSON文件读取请求信息
 type RequestConfig struct {
-	URL     string                 `json:"url"`
-	Method  string                 `json:"method,omitempty"`
-	Params  map[string]interface{} `json:"params,omitempty"`
-	Data    any                    `json:"data,omitempty"`
-	Headers map[string]string      `json:"headers,omitempty"`
-	Verify  Verify                 `json:"verify"`
+	URL      string                 `json:"url"`
+	Method   string                 `json:"method,omitempty"`
+	Params   map[string]interface{} `json:"params,omitempty"`
+	Data     any                    `json:"data,omitempty"`
+	Headers  map[string]string      `json:"headers,omitempty"`
+	Response Response               `json:"response"`
 }
 
 // RequestHandler 请求处理器结构体
@@ -153,4 +153,25 @@ func MsToSeconds(ms int64) string {
 		return fmt.Sprintf("%.3f", float64(ms)/1000) + "s"
 	}
 	return fmt.Sprintf("%d", ms) + "ms"
+}
+func average(durations []int64) int64 {
+	if len(durations) == 0 {
+		return 0
+	}
+
+	var total int64
+	for _, d := range durations {
+		total += d
+	}
+	return total / int64(len(durations))
+}
+
+func maxDuration(durations []int64) int64 {
+	max := int64(0)
+	for _, d := range durations {
+		if d > max {
+			max = d
+		}
+	}
+	return max
 }

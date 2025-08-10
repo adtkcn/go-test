@@ -70,8 +70,8 @@ func runTest(requestList []RequestConfig, concurrency, totalRequests, timeout in
 	// 顺序处理每个请求配置
 	for index, request := range requestList {
 		fmt.Printf("开始测试请求配置 #%d: [%s] %s\n", index+1, request.Method, request.URL)
-		if request.Verify.Status == 0 {
-			request.Verify.Status = http.StatusOK
+		if request.Response.Status == 0 {
+			request.Response.Status = http.StatusOK
 		}
 		reqResult := runSingleConfigTest(request, concurrency, totalRequests, timeout)
 
@@ -157,15 +157,15 @@ func runSingleConfigTest(request RequestConfig, concurrency, totalRequests, time
 						fmt.Printf("\n响应体内容: %s\n", string(body))
 					}
 					var statusFlag = false
-					if request.Verify.Status == resp.StatusCode {
+					if request.Response.Status == resp.StatusCode {
 						statusFlag = true
 					} else {
 						statusFlag = false
 					}
 					var fieldFlag = true
-					if request.Verify.Field != nil {
+					if request.Response.Data != nil {
 						var jsonStr = string(body)
-						for key, value := range request.Verify.Field {
+						for key, value := range request.Response.Data {
 							jsonValue := gjson.Get(jsonStr, key).Value()
 							if jsonValue != value {
 								mu.Lock()
@@ -216,10 +216,11 @@ func showResult(results []Result) {
 		}
 		fmt.Printf("====== 请求配置 #%d ======\n", index+1)
 		fmt.Printf("【URL】:[%s] %s\n", reqResult.RequestConfig.Method, reqResult.RequestConfig.URL)
-		fmt.Printf("【QPS】:%.2f\n\n", float64(reqResult.TotalRequests)/float64(reqResult.TotalTime)*1000)
+		fmt.Printf("【All-QPS】:%.2f\n\n", float64(reqResult.TotalRequests)/float64(reqResult.TotalTime)*1000)
+		fmt.Printf("【 OK-QPS】:%.2f\n\n", float64(reqResult.SuccessRequests)/float64(reqResult.TotalTime)*1000)
 
 		fmt.Printf("总请求: %d, 成功数: %d, 失败数: %d, 其中超时 %d, 成功率: %.2f%%\n", reqResult.TotalRequests, reqResult.SuccessRequests, reqResult.TotalRequests-reqResult.SuccessRequests, reqResult.RequestTimeoutNum, float64(reqResult.SuccessRequests)/float64(reqResult.TotalRequests)*100)
-		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v (超时不计入)\n", MsToSeconds(reqResult.TotalTime), MsToSeconds(reqResult.MaxTime), MsToSeconds(reqResult.AvgTime))
+		fmt.Printf("总耗时: %v, 最大耗时: %v, 平均耗时: %v \n", MsToSeconds(reqResult.TotalTime), MsToSeconds(reqResult.MaxTime), MsToSeconds(reqResult.AvgTime))
 
 		if len(reqResult.ErrorCodes) > 0 {
 			fmt.Println("错误状态码:")
@@ -268,26 +269,4 @@ func showResult(results []Result) {
 		// fmt.Printf("响应时间: %+v\n", reqResult.RequestsTimes)
 		fmt.Printf("\n")
 	}
-}
-
-func average(durations []int64) int64 {
-	if len(durations) == 0 {
-		return 0
-	}
-
-	var total int64
-	for _, d := range durations {
-		total += d
-	}
-	return total / int64(len(durations))
-}
-
-func maxDuration(durations []int64) int64 {
-	max := int64(0)
-	for _, d := range durations {
-		if d > max {
-			max = d
-		}
-	}
-	return max
 }

@@ -5,9 +5,9 @@
     "params": {
       "wd": "换行符"
     },
-    "verify": {
+    "response": {
       "status": 200,
-      "field": {
+      "data": {
         "code": 200,
         "message": "success"
       }
